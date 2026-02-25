@@ -51,8 +51,8 @@ onMounted(() => {
 
     <el-table :data="cacheList" v-loading="loading" style="width: 100%">
       <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="cacheKey" label="缓存 Key (MD5)" min-width="300" show-overflow-tooltip />
-      <el-table-column prop="toolName" label="工具名称" width="150" />
+      <el-table-column prop="fileMd5" label="缓存 Key (MD5)" min-width="300" show-overflow-tooltip />
+      <el-table-column prop="reportPath" label="路径" width="150" />
       <el-table-column prop="createdTime" label="创建时间" width="180">
         <template #default="scope">
           {{ dayjs(scope.row.createdTime).format('YYYY-MM-DD HH:mm:ss') }}
