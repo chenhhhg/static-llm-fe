@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { getTaskDetail, cancelTask, type AnalysisTask } from '../api/task'
-import { getIssuesByTaskId, type Issue } from '../api/issue'
+import { getIssuesByTaskId, type Issue, type PageResult } from '../api/issue'
 import StatusBadge from '../components/StatusBadge.vue'
 import MdViewer from '../components/MdViewer.vue'
 import dayjs from 'dayjs'
@@ -15,12 +15,15 @@ const issues = ref<Issue[]>([])
 const loading = ref(false)
 const selectedIssue = ref<Issue | null>(null)
 const pollingInterval = ref<number | null>(null)
+const currentPage = ref(1)
+const pageSize = ref(10)
+const totalIssues = ref(0)
 
 const fetchDetail = async () => {
   try {
     const [taskRes, issuesRes] = await Promise.all([
       getTaskDetail(parseInt(taskId)),
-      getIssuesByTaskId(parseInt(taskId))
+      getIssuesByTaskId(parseInt(taskId), currentPage.value, pageSize.value)
     ])
 
     if (taskRes.data.code === 200) {
@@ -33,11 +36,17 @@ const fetchDetail = async () => {
     }
 
     if (issuesRes.data.code === 200) {
-      issues.value = issuesRes.data.data
+      issues.value = issuesRes.data.data.records
+      totalIssues.value = issuesRes.data.data.total
     }
   } catch (error) {
     console.error(error)
   }
+}
+
+const handlePageChange = (page: number) => {
+  currentPage.value = page
+  fetchDetail()
 }
 
 const startPolling = () => {
@@ -124,6 +133,16 @@ onUnmounted(() => {
               暂无缺陷或正在分析中...
             </div>
           </div>
+          <div class="pagination-container" v-if="totalIssues > 0">
+            <el-pagination
+              v-model:current-page="currentPage"
+              v-model:page-size="pageSize"
+              :total="totalIssues"
+              layout="prev, pager, next"
+              @current-change="handlePageChange"
+              small
+            />
+          </div>
         </el-card>
       </el-col>
       
@@ -206,7 +225,14 @@ onUnmounted(() => {
 
 .issue-list {
   overflow-y: auto;
-  height: 100%;
+  flex: 1;
+}
+
+.pagination-container {
+  padding: 10px;
+  border-top: 1px solid #ebeef5;
+  display: flex;
+  justify-content: center;
 }
 
 .issue-item {

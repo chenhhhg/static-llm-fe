@@ -29,6 +29,20 @@ export interface ResultAnalysisIssue {
   data: Issue
 }
 
+export interface PageResult<T> {
+  records: T[]
+  total: number
+  size: number
+  current: number
+  pages: number
+}
+
+export interface ResultPageAnalysisIssue {
+  code: number
+  message: string
+  data: PageResult<Issue>
+}
+
 export interface ResultListAnalysisIssue {
   code: number
   message: string
@@ -39,6 +53,11 @@ export const getIssue = (id: number) => {
   return api.get<ResultAnalysisIssue>(`/issue/${id}`)
 }
 
-export const getIssuesByTaskId = (taskId: number) => {
-  return api.get<ResultListAnalysisIssue>(`/issue/list/${taskId}`)
+export const getIssuesByTaskId = (taskId: number, page: number = 1, size: number = 10) => {
+  return api.get<ResultPageAnalysisIssue>(`/issue/list/${taskId}`, {
+    params: {
+      page,
+      size
+    }
+  })
 }
