@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { getTaskDetail, cancelTask, type AnalysisTask } from '../api/task'
-import { getIssuesByTaskId, type Issue, type PageResult } from '../api/issue'
+import { getIssuesByTaskId, type Issue, type PageResult, type IssueFilter } from '../api/issue'
 import StatusBadge from '../components/StatusBadge.vue'
 import MdViewer from '../components/MdViewer.vue'
 import dayjs from 'dayjs'
 import { ElMessage } from 'element-plus'
+import { Search } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const taskId = route.params.id as string
@@ -19,11 +20,43 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 const totalIssues = ref(0)
 
+// Filter state
+const filterSeverity = ref<string>('')
+const filterKeyword = ref<string>('')
+const filterFalsePositive = ref<string>('')
+
+const severityOptions = [
+  { label: '全部', value: '' },
+  { label: 'HIGH', value: 'HIGH' },
+  { label: 'MEDIUM', value: 'MEDIUM' },
+  { label: 'LOW', value: 'LOW' },
+]
+
+const falsePositiveOptions = [
+  { label: '全部', value: '' },
+  { label: '真实缺陷', value: 'false' },
+  { label: '误报', value: 'true' },
+]
+
+const buildFilter = (): IssueFilter => {
+  const filter: IssueFilter = {}
+  if (filterSeverity.value) {
+    filter.severity = filterSeverity.value
+  }
+  if (filterKeyword.value.trim()) {
+    filter.keyword = filterKeyword.value.trim()
+  }
+  if (filterFalsePositive.value !== '') {
+    filter.isFalsePositive = filterFalsePositive.value === 'true'
+  }
+  return filter
+}
+
 const fetchDetail = async () => {
   try {
     const [taskRes, issuesRes] = await Promise.all([
       getTaskDetail(parseInt(taskId)),
-      getIssuesByTaskId(parseInt(taskId), currentPage.value, pageSize.value)
+      getIssuesByTaskId(parseInt(taskId), currentPage.value, pageSize.value, buildFilter())
     ])
 
     if (taskRes.data.code === 200) {
@@ -47,6 +80,23 @@ const fetchDetail = async () => {
 const handlePageChange = (page: number) => {
   currentPage.value = page
   fetchDetail()
+}
+
+const handleFilterChange = () => {
+  currentPage.value = 1
+  selectedIssue.value = null
+  fetchDetail()
+}
+
+const handleSearch = () => {
+  handleFilterChange()
+}
+
+const handleResetFilter = () => {
+  filterSeverity.value = ''
+  filterKeyword.value = ''
+  filterFalsePositive.value = ''
+  handleFilterChange()
 }
 
 const startPolling = () => {
@@ -112,9 +162,54 @@ onUnmounted(() => {
         <el-card class="issue-list-card">
           <template #header>
             <div class="card-header">
-              <span>缺陷列表 ({{ issues.length || 0 }})</span>
+              <span>缺陷列表 ({{ totalIssues || 0 }})</span>
             </div>
           </template>
+          <!-- Filter Bar -->
+          <div class="filter-bar">
+            <el-input
+              v-model="filterKeyword"
+              placeholder="搜索规则/文件名..."
+              :prefix-icon="Search"
+              clearable
+              size="small"
+              @keyup.enter="handleSearch"
+              @clear="handleFilterChange"
+              class="filter-input"
+            />
+            <div class="filter-row">
+              <el-select
+                v-model="filterSeverity"
+                placeholder="严重程度"
+                size="small"
+                @change="handleFilterChange"
+                class="filter-select"
+              >
+                <el-option
+                  v-for="opt in severityOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <el-select
+                v-model="filterFalsePositive"
+                placeholder="误报筛选"
+                size="small"
+                @change="handleFilterChange"
+                class="filter-select"
+              >
+                <el-option
+                  v-for="opt in falsePositiveOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <el-button size="small" @click="handleResetFilter" text>重置</el-button>
+            </div>
+          </div>
+          <!-- Issue List -->
           <div class="issue-list">
             <div 
               v-for="(issue, index) in issues" 
@@ -332,5 +427,25 @@ onUnmounted(() => {
   justify-content: center;
   align-items: center;
   height: 100%;
+}
+
+.filter-bar {
+  padding: 0 0 10px 0;
+  border-bottom: 1px solid #ebeef5;
+  margin-bottom: 8px;
+}
+
+.filter-input {
+  margin-bottom: 8px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-select {
+  flex: 1;
 }
 </style>

@@ -23,6 +23,12 @@ export interface Issue {
   updatedTime: string
 }
 
+export interface IssueFilter {
+  severity?: string
+  keyword?: string
+  isFalsePositive?: boolean | null
+}
+
 export interface ResultAnalysisIssue {
   code: number
   message: string
@@ -53,11 +59,12 @@ export const getIssue = (id: number) => {
   return api.get<ResultAnalysisIssue>(`/issue/${id}`)
 }
 
-export const getIssuesByTaskId = (taskId: number, page: number = 1, size: number = 10) => {
+export const getIssuesByTaskId = (taskId: number, page: number = 1, size: number = 10, filter?: IssueFilter) => {
   return api.get<ResultPageAnalysisIssue>(`/issue/list/${taskId}`, {
     params: {
       page,
-      size
+      size,
+      ...filter
     }
   })
 }
