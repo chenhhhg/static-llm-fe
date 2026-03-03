@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { getTaskDetail, cancelTask, type AnalysisTask } from '../api/task'
 import { getIssuesByTaskId, type Issue, type PageResult, type IssueFilter } from '../api/issue'
@@ -7,7 +7,8 @@ import StatusBadge from '../components/StatusBadge.vue'
 import MdViewer from '../components/MdViewer.vue'
 import dayjs from 'dayjs'
 import { ElMessage } from 'element-plus'
-import { Search } from '@element-plus/icons-vue'
+import { Search, DataAnalysis } from '@element-plus/icons-vue'
+import { evaluate, type EvaluationReport } from '../api/evaluation'
 
 const route = useRoute()
 const taskId = route.params.id as string
@@ -15,7 +16,6 @@ const task = ref<AnalysisTask | null>(null)
 const issues = ref<Issue[]>([])
 const loading = ref(false)
 const selectedIssue = ref<Issue | null>(null)
-const pollingInterval = ref<number | null>(null)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const totalIssues = ref(0)
@@ -61,11 +61,6 @@ const fetchDetail = async () => {
 
     if (taskRes.data.code === 200) {
       task.value = taskRes.data.data
-      
-      // Stop polling if completed or failed
-      if (['COMPLETED', 'FAILED', 'CANCELLED'].includes(task.value.status)) {
-        stopPolling()
-      }
     }
 
     if (issuesRes.data.code === 200) {
@@ -99,20 +94,6 @@ const handleResetFilter = () => {
   handleFilterChange()
 }
 
-const startPolling = () => {
-  fetchDetail() // Initial fetch
-  pollingInterval.value = window.setInterval(() => {
-    fetchDetail()
-  }, 3000)
-}
-
-const stopPolling = () => {
-  if (pollingInterval.value) {
-    clearInterval(pollingInterval.value)
-    pollingInterval.value = null
-  }
-}
-
 const handleCancel = async () => {
   try {
     const res = await cancelTask(parseInt(taskId))
@@ -129,12 +110,51 @@ const selectIssue = (issue: Issue) => {
   selectedIssue.value = issue
 }
 
-onMounted(() => {
-  startPolling()
+// Evaluation
+const evalDialogVisible = ref(false)
+const evalLoading = ref(false)
+const evalForm = ref({
+  benchmarkPath: '',
+  benchmarkType: 'OWASP-1.2'
 })
+const evalReport = ref<EvaluationReport | null>(null)
 
-onUnmounted(() => {
-  stopPolling()
+const openEvalDialog = () => {
+  evalReport.value = null
+  evalDialogVisible.value = true
+}
+
+const handleEvaluate = async () => {
+  if (!evalForm.value.benchmarkPath.trim()) {
+    ElMessage.warning('请输入基准测试文件路径')
+    return
+  }
+  evalLoading.value = true
+  try {
+    const res = await evaluate({
+      taskId: parseInt(taskId),
+      benchmarkPath: evalForm.value.benchmarkPath.trim(),
+      benchmarkType: evalForm.value.benchmarkType || 'OWASP-1.2'
+    })
+    if (res.data.code === 200) {
+      evalReport.value = res.data.data
+    } else {
+      ElMessage.error(res.data.message || '评估失败')
+    }
+  } catch (error) {
+    ElMessage.error('评估请求失败')
+  } finally {
+    evalLoading.value = false
+  }
+}
+
+const formatPercent = (val: number) => {
+  if (val == null) return '-'
+  return (val * 100).toFixed(2) + '%'
+}
+
+onMounted(() => {
+  fetchDetail()
 })
 </script>
 
@@ -146,6 +166,13 @@ onUnmounted(() => {
         <StatusBadge :status="task.status" class="ml-2" />
       </div>
       <div class="actions">
+        <el-button
+          type="primary"
+          :icon="DataAnalysis"
+          @click="openEvalDialog"
+        >
+          执行评估
+        </el-button>
         <el-button 
           v-if="['SUBMITTED', 'WAITING_ANALYSIS', 'ANALYZING', 'WAITING_LLM', 'JUDGING'].includes(task.status)"
           type="danger" 
@@ -287,6 +314,75 @@ onUnmounted(() => {
       </el-col>
     </el-row>
   </div>
+
+  <!-- Evaluation Dialog -->
+  <el-dialog
+    v-model="evalDialogVisible"
+    title="执行评估"
+    width="600px"
+    :close-on-click-modal="false"
+  >
+    <el-form label-width="120px" :model="evalForm">
+      <el-form-item label="基准测试类型">
+        <el-input v-model="evalForm.benchmarkType" placeholder="例如：OWASP-1.2" />
+      </el-form-item>
+      <el-form-item label="基准文件路径" required>
+        <el-input
+          v-model="evalForm.benchmarkPath"
+          placeholder="请输入服务器上的基准测试文件路径"
+          clearable
+        />
+      </el-form-item>
+    </el-form>
+
+    <!-- Report Result -->
+    <div v-if="evalReport" class="eval-report">
+      <el-divider content-position="left">评估结果</el-divider>
+      <el-row :gutter="16" class="eval-metrics">
+        <el-col :span="6">
+          <el-statistic title="TP（真阳性）" :value="evalReport.tpCount" />
+        </el-col>
+        <el-col :span="6">
+          <el-statistic title="FP（假阳性）" :value="evalReport.fpCount" />
+        </el-col>
+        <el-col :span="6">
+          <el-statistic title="FN（假阴性）" :value="evalReport.fnCount" />
+        </el-col>
+        <el-col :span="6">
+          <el-statistic title="TN（真阴性）" :value="evalReport.tnCount" />
+        </el-col>
+      </el-row>
+      <el-row :gutter="16" class="eval-metrics">
+        <el-col :span="6">
+          <el-statistic title="精确率" :value="formatPercent(evalReport.precision)" />
+        </el-col>
+        <el-col :span="6">
+          <el-statistic title="召回率" :value="formatPercent(evalReport.recall)" />
+        </el-col>
+        <el-col :span="6">
+          <el-statistic title="F1 Score" :value="formatPercent(evalReport.f1Score)" />
+        </el-col>
+        <el-col :span="6">
+          <el-statistic
+            title="Benchmark Score"
+            :value="formatPercent(evalReport.benchmarkScore)"
+            class="score-highlight"
+          />
+        </el-col>
+      </el-row>
+    </div>
+
+    <template #footer>
+      <el-button @click="evalDialogVisible = false">关闭</el-button>
+      <el-button
+        type="primary"
+        :loading="evalLoading"
+        @click="handleEvaluate"
+      >
+        {{ evalLoading ? '评估中...' : '开始评估' }}
+      </el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>
@@ -447,5 +543,18 @@ onUnmounted(() => {
 
 .filter-select {
   flex: 1;
+}
+
+.eval-report {
+  margin-top: 10px;
+}
+
+.eval-metrics {
+  margin-bottom: 20px;
+}
+
+.score-highlight :deep(.el-statistic__number) {
+  color: #409eff;
+  font-weight: bold;
 }
 </style>
