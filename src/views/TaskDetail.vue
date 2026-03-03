@@ -1,20 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { getTaskDetail, cancelTask, type AnalysisTask } from '../api/task'
-import { getIssuesByTaskId, type Issue, type PageResult, type IssueFilter } from '../api/issue'
+import { getIssuesByTaskId, type Issue, type IssueFilter } from '../api/issue'
 import StatusBadge from '../components/StatusBadge.vue'
 import MdViewer from '../components/MdViewer.vue'
 import dayjs from 'dayjs'
 import { ElMessage } from 'element-plus'
 import { Search, DataAnalysis } from '@element-plus/icons-vue'
-import { evaluate, type EvaluationReport } from '../api/evaluation'
+import { useRouter } from 'vue-router'
+import { evaluate, type EvaluationReport, getAiMisjudgments, type AiMisjudgmentReport, type Misjudgment } from '../api/evaluation'
 
 const route = useRoute()
+const router = useRouter()
 const taskId = route.params.id as string
 const task = ref<AnalysisTask | null>(null)
 const issues = ref<Issue[]>([])
-const loading = ref(false)
 const selectedIssue = ref<Issue | null>(null)
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -115,7 +116,8 @@ const evalDialogVisible = ref(false)
 const evalLoading = ref(false)
 const evalForm = ref({
   benchmarkPath: '',
-  benchmarkType: 'OWASP-1.2'
+  benchmarkType: 'OWASP-1.2',
+  aiOnly: true
 })
 const evalReport = ref<EvaluationReport | null>(null)
 
@@ -134,7 +136,8 @@ const handleEvaluate = async () => {
     const res = await evaluate({
       taskId: parseInt(taskId),
       benchmarkPath: evalForm.value.benchmarkPath.trim(),
-      benchmarkType: evalForm.value.benchmarkType || 'OWASP-1.2'
+      benchmarkType: evalForm.value.benchmarkType || 'OWASP-1.2',
+      aiOnly: evalForm.value.aiOnly
     })
     if (res.data.code === 200) {
       evalReport.value = res.data.data
@@ -151,6 +154,87 @@ const handleEvaluate = async () => {
 const formatPercent = (val: number) => {
   if (val == null) return '-'
   return (val * 100).toFixed(2) + '%'
+}
+
+/** Convert categoryStats map to table rows */
+const categoryStatsRows = computed(() => {
+  if (!evalReport.value?.categoryStats) return []
+  return Object.entries(evalReport.value.categoryStats).map(([category, stat]) => ({
+    category,
+    ...stat
+  }))
+})
+
+/** Navigate to evaluation record detail page */
+const goToEvalRecordDetail = (recordId: number) => {
+  if (!recordId) return
+  router.push({ name: 'eval-record-detail', params: { recordId } })
+}
+
+// AI Misjudgment Analysis
+const misjudgDialogVisible = ref(false)
+const misjudgLoading = ref(false)
+const misjudgForm = ref({
+  benchmarkPath: '',
+  benchmarkType: 'OWASP-1.2'
+})
+const misjudgReport = ref<AiMisjudgmentReport | null>(null)
+const misjudgSelectedRow = ref<Misjudgment | null>(null)
+const misjudgOnlyWrong = ref(true)
+
+const openMisjudgDialog = () => {
+  misjudgReport.value = null
+  misjudgSelectedRow.value = null
+  misjudgOnlyWrong.value = true
+  // Sync benchmarkPath from eval form if available
+  if (evalForm.value.benchmarkPath) {
+    misjudgForm.value.benchmarkPath = evalForm.value.benchmarkPath
+    misjudgForm.value.benchmarkType = evalForm.value.benchmarkType
+  }
+  misjudgDialogVisible.value = true
+}
+
+const handleMisjudgAnalysis = async () => {
+  if (!misjudgForm.value.benchmarkPath.trim()) {
+    ElMessage.warning('请输入基准测试文件路径')
+    return
+  }
+  misjudgLoading.value = true
+  misjudgSelectedRow.value = null
+  try {
+    const res = await getAiMisjudgments({
+      taskId: parseInt(taskId),
+      benchmarkPath: misjudgForm.value.benchmarkPath.trim(),
+      benchmarkType: misjudgForm.value.benchmarkType || 'OWASP-1.2'
+    })
+    if (res.data.code === 200) {
+      misjudgReport.value = res.data.data
+    } else {
+      ElMessage.error(res.data.message || '分析失败')
+    }
+  } catch (error) {
+    ElMessage.error('误判分析请求失败')
+  } finally {
+    misjudgLoading.value = false
+  }
+}
+
+const handleMisjudgRowClick = (row: Misjudgment) => {
+  misjudgSelectedRow.value = row
+}
+
+/** Filtered list based on onlyWrong toggle */
+const filteredMisjudgDetails = computed(() => {
+  if (!misjudgReport.value) return []
+  if (misjudgOnlyWrong.value) {
+    return misjudgReport.value.misjudgments
+  }
+  return misjudgReport.value.allDetails ?? misjudgReport.value.misjudgments
+})
+
+/** Navigate to evaluation history page */
+const goToEvalHistory = () => {
+  router.push({ name: 'eval-history', query: { taskId } })
 }
 
 onMounted(() => {
@@ -172,6 +256,18 @@ onMounted(() => {
           @click="openEvalDialog"
         >
           执行评估
+        </el-button>
+        <el-button
+          type="warning"
+          :icon="DataAnalysis"
+          @click="openMisjudgDialog"
+        >
+          AI误判分析
+        </el-button>
+        <el-button
+          @click="goToEvalHistory"
+        >
+          评估历史
         </el-button>
         <el-button 
           v-if="['SUBMITTED', 'WAITING_ANALYSIS', 'ANALYZING', 'WAITING_LLM', 'JUDGING'].includes(task.status)"
@@ -333,11 +429,22 @@ onMounted(() => {
           clearable
         />
       </el-form-item>
+      <el-form-item label="仅AI结果">
+        <el-switch
+          v-model="evalForm.aiOnly"
+          active-text="是"
+          inactive-text="否"
+        />
+        <span style="margin-left: 8px; color: #909399; font-size: 12px;">开启后仅评估AI判定的结果</span>
+      </el-form-item>
     </el-form>
 
     <!-- Report Result -->
     <div v-if="evalReport" class="eval-report">
-      <el-divider content-position="left">评估结果</el-divider>
+      <el-divider content-position="left">
+        评估结果
+        <el-tag v-if="evalReport.recordId" size="small" type="info" style="margin-left: 8px;">记录 #{{ evalReport.recordId }}</el-tag>
+      </el-divider>
       <el-row :gutter="16" class="eval-metrics">
         <el-col :span="6">
           <el-statistic title="TP（真阳性）" :value="evalReport.tpCount" />
@@ -370,6 +477,29 @@ onMounted(() => {
           />
         </el-col>
       </el-row>
+
+      <!-- Category Stats -->
+      <div v-if="evalReport.categoryStats && Object.keys(evalReport.categoryStats).length > 0">
+        <el-divider content-position="left">分类统计</el-divider>
+        <el-table :data="categoryStatsRows" size="small" border style="width: 100%">
+          <el-table-column prop="category" label="漏洞类别" width="140" />
+          <el-table-column prop="tp" label="TP" width="70" align="center" />
+          <el-table-column prop="fp" label="FP" width="70" align="center" />
+          <el-table-column prop="fn" label="FN" width="70" align="center" />
+          <el-table-column prop="tn" label="TN" width="70" align="center" />
+          <el-table-column label="召回率" width="100" align="center">
+            <template #default="{ row }">
+              {{ formatPercent(row.recall) }}
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <div style="margin-top: 12px; text-align: right;">
+        <el-button size="small" @click="goToEvalRecordDetail(evalReport.recordId)">
+          查看完整详情
+        </el-button>
+      </div>
     </div>
 
     <template #footer>
@@ -380,6 +510,140 @@ onMounted(() => {
         @click="handleEvaluate"
       >
         {{ evalLoading ? '评估中...' : '开始评估' }}
+      </el-button>
+    </template>
+  </el-dialog>
+  <!-- AI Misjudgment Dialog -->
+  <el-dialog
+    v-model="misjudgDialogVisible"
+    title="AI 误判分析"
+    width="900px"
+    :close-on-click-modal="false"
+  >
+    <el-form label-width="120px" :model="misjudgForm">
+      <el-form-item label="基准测试类型">
+        <el-input v-model="misjudgForm.benchmarkType" placeholder="例如：OWASP-1.2" />
+      </el-form-item>
+      <el-form-item label="基准文件路径" required>
+        <el-input
+          v-model="misjudgForm.benchmarkPath"
+          placeholder="请输入服务器上的基准测试文件路径"
+          clearable
+        />
+      </el-form-item>
+    </el-form>
+
+    <!-- Summary -->
+    <div v-if="misjudgReport" class="misjudg-report">
+      <el-divider content-position="left">分析概要</el-divider>
+      <el-row :gutter="16" class="eval-metrics">
+        <el-col :span="5">
+          <el-statistic title="分析总数" :value="misjudgReport.totalAnalyzed" />
+        </el-col>
+        <el-col :span="5">
+          <el-statistic title="匹配数" :value="misjudgReport.matchedCount" />
+        </el-col>
+        <el-col :span="5">
+          <el-statistic title="正确数" :value="misjudgReport.correctCount" />
+        </el-col>
+        <el-col :span="5">
+          <el-statistic title="错误数" :value="misjudgReport.wrongCount" />
+        </el-col>
+        <el-col :span="4">
+          <el-statistic
+            title="准确率"
+            :value="formatPercent(misjudgReport.accuracy)"
+            class="score-highlight"
+          />
+        </el-col>
+      </el-row>
+
+      <el-divider content-position="left">
+        对比详情 ({{ filteredMisjudgDetails.length }})
+        <el-switch
+          v-model="misjudgOnlyWrong"
+          active-text="仅看错误"
+          inactive-text="全部"
+          style="margin-left: 12px;"
+        />
+      </el-divider>
+      <el-table
+        :data="filteredMisjudgDetails"
+        max-height="300"
+        size="small"
+        highlight-current-row
+        @row-click="handleMisjudgRowClick"
+        style="width: 100%"
+      >
+        <el-table-column prop="benchmarkTestName" label="测试用例" width="180" show-overflow-tooltip />
+        <el-table-column prop="ruleId" label="规则ID" width="140" show-overflow-tooltip />
+        <el-table-column label="Benchmark" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.benchmarkIsReal ? 'danger' : 'success'" size="small">
+              {{ row.benchmarkIsReal ? '真实' : '假阳' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="AI判定" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.aiIsFalsePositive ? 'info' : 'warning'" size="small">
+              {{ row.aiIsFalsePositive ? '误报' : '真实' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="AI正确" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.aiCorrect ? 'success' : 'danger'" size="small">
+              {{ row.aiCorrect ? '✓' : '✗' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="errorType" label="错误类型" show-overflow-tooltip />
+      </el-table>
+
+      <!-- Selected Misjudgment Detail -->
+      <div v-if="misjudgSelectedRow" class="misjudg-detail">
+        <el-divider content-position="left">详细信息</el-divider>
+        <el-descriptions :column="2" border size="small">
+          <el-descriptions-item label="Issue ID">{{ misjudgSelectedRow.issueId }}</el-descriptions-item>
+          <el-descriptions-item label="测试用例">{{ misjudgSelectedRow.benchmarkTestName }}</el-descriptions-item>
+          <el-descriptions-item label="文件路径" :span="2">{{ misjudgSelectedRow.filePath }}</el-descriptions-item>
+          <el-descriptions-item label="规则ID">{{ misjudgSelectedRow.ruleId }}</el-descriptions-item>
+          <el-descriptions-item label="漏洞分类">{{ misjudgSelectedRow.normalizedCategory }}</el-descriptions-item>
+          <el-descriptions-item label="Benchmark 标注">
+            <el-tag :type="misjudgSelectedRow.benchmarkIsReal ? 'danger' : 'success'" size="small">
+              {{ misjudgSelectedRow.benchmarkIsReal ? '真实漏洞' : '假阳性' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="AI 判定">
+            <el-tag :type="misjudgSelectedRow.aiIsFalsePositive ? 'info' : 'warning'" size="small">
+              {{ misjudgSelectedRow.aiIsFalsePositive ? '判为误报' : '判为真实' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="错误类型" :span="2">
+            <span style="color: #f56c6c; font-weight: bold;">{{ misjudgSelectedRow.errorType }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="AI 推理" :span="2">
+            <div class="ai-reasoning-text">{{ misjudgSelectedRow.aiReasoning }}</div>
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
+
+      <div v-if="misjudgReport?.recordId" style="margin-top: 12px; text-align: right;">
+        <el-button size="small" @click="goToEvalRecordDetail(misjudgReport.recordId)">
+          查看完整详情
+        </el-button>
+      </div>
+    </div>
+
+    <template #footer>
+      <el-button @click="misjudgDialogVisible = false">关闭</el-button>
+      <el-button
+        type="warning"
+        :loading="misjudgLoading"
+        @click="handleMisjudgAnalysis"
+      >
+        {{ misjudgLoading ? '分析中...' : '开始分析' }}
       </el-button>
     </template>
   </el-dialog>
@@ -556,5 +820,21 @@ onMounted(() => {
 .score-highlight :deep(.el-statistic__number) {
   color: #409eff;
   font-weight: bold;
+}
+
+.misjudg-report {
+  margin-top: 10px;
+}
+
+.misjudg-detail {
+  margin-top: 10px;
+}
+
+.ai-reasoning-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+  max-height: 200px;
+  overflow-y: auto;
 }
 </style>

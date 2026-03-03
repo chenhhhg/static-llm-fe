@@ -28,6 +28,16 @@ const router = createRouter({
       path: '/cache',
       name: 'cache',
       component: () => import('../views/CacheList.vue')
+    },
+    {
+      path: '/eval-history',
+      name: 'eval-history',
+      component: () => import('../views/EvalHistory.vue')
+    },
+    {
+      path: '/eval-record/:recordId',
+      name: 'eval-record-detail',
+      component: () => import('../views/EvalRecordDetail.vue')
     }
   ]
 })

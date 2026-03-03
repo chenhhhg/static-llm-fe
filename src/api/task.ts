@@ -9,12 +9,14 @@ export interface FileAnalysisRequest {
   targetJar: string
   sourcePath: string
   packageFilter?: string
+  benchmarkMode?: boolean
 }
 
 export interface TaskParams {
   targetJar?: string
   sourcePath?: string
   packageFilter?: string
+  benchmarkMode?: boolean
   [key: string]: any
 }
 

@@ -11,7 +11,8 @@ const loading = ref(false)
 const form = reactive({
   targetJar: '',
   sourcePath: '',
-  packageFilter: ''
+  packageFilter: '',
+  benchmarkMode: false
 })
 
 const rules = {
@@ -64,6 +65,16 @@ const onReset = () => {
         </el-form-item>
         <el-form-item label="包名过滤器" prop="packageFilter">
           <el-input v-model="form.packageFilter" placeholder="例如: com.example.- (可选)" />
+        </el-form-item>
+        <el-form-item label="Benchmark 模式">
+          <el-switch
+            v-model="form.benchmarkMode"
+            active-text="开启"
+            inactive-text="关闭"
+          />
+          <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+            开启后将以 OWASP Benchmark 模式运行分析
+          </span>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="onSubmit" :loading="loading">提交任务</el-button>
