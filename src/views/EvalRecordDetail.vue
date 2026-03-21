@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getEvalRecord, getEvalRecordDetails, type EvalRecord, type EvalDetailItem, type EvalMode } from '../api/evaluation'
 import dayjs from 'dayjs'
+import { QuestionFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -119,6 +120,17 @@ onMounted(() => {
           <el-col :span="3"><el-statistic title="F1 Score" :value="formatPercent(record.f1Score)" /></el-col>
           <el-col :span="3">
             <el-statistic title="Benchmark" :value="formatPercent(record.benchmarkScore)" class="score-highlight" />
+          </el-col>
+        </el-row>
+        <el-row :gutter="16" class="metrics-row" v-if="record.unmappedIssueCount != null">
+          <el-col :span="6">
+            <el-statistic title="不可映射Issue" :value="record.unmappedIssueCount">
+              <template #suffix>
+                <el-tooltip content="SpotBugs检出但ruleId无法映射到Benchmark安全漏洞类别的Issue数量，不参与混淆矩阵计算" placement="top">
+                  <el-icon style="margin-left: 4px; cursor: help; color: #909399;"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
+            </el-statistic>
           </el-col>
         </el-row>
       </div>

@@ -7,7 +7,7 @@ import StatusBadge from '../components/StatusBadge.vue'
 import MdViewer from '../components/MdViewer.vue'
 import dayjs from 'dayjs'
 import { ElMessage } from 'element-plus'
-import { Search, DataAnalysis } from '@element-plus/icons-vue'
+import { Search, DataAnalysis, QuestionFilled } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { evaluate, type EvaluationReport, getAiMisjudgments, type AiMisjudgmentReport, type Misjudgment } from '../api/evaluation'
 
@@ -475,6 +475,17 @@ onMounted(() => {
             :value="formatPercent(evalReport.benchmarkScore)"
             class="score-highlight"
           />
+        </el-col>
+      </el-row>
+      <el-row :gutter="16" class="eval-metrics" v-if="evalReport.unmappedIssueCount != null">
+        <el-col :span="6">
+          <el-statistic title="不可映射Issue" :value="evalReport.unmappedIssueCount">
+            <template #suffix>
+              <el-tooltip content="SpotBugs检出但ruleId无法映射到Benchmark安全漏洞类别的Issue数量，不参与混淆矩阵计算" placement="top">
+                <el-icon style="margin-left: 4px; cursor: help; color: #909399;"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </template>
+          </el-statistic>
         </el-col>
       </el-row>
 

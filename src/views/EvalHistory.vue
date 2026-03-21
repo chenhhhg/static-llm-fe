@@ -124,6 +124,9 @@ onMounted(() => {
       <el-table-column label="Benchmark" width="90" align="center">
         <template #default="{ row }">{{ formatPercent(row.benchmarkScore) }}</template>
       </el-table-column>
+      <el-table-column label="不可映射" width="80" align="center">
+        <template #default="{ row }">{{ row.unmappedIssueCount ?? '-' }}</template>
+      </el-table-column>
 
       <!-- AI_MISJUDGMENT metrics -->
       <el-table-column label="已分析" width="70" align="center">

@@ -42,6 +42,7 @@ export interface EvaluationReport {
   recall: number
   f1Score: number
   benchmarkScore: number
+  unmappedIssueCount?: number
   details?: EvalDetailItem[]
   categoryStats?: Record<string, CategoryStat>
 }
@@ -91,6 +92,7 @@ export interface EvalRecord {
   recallRate: number | null
   f1Score: number | null
   benchmarkScore: number | null
+  unmappedIssueCount: number | null
   // AI_MISJUDGMENT metrics
   totalAnalyzed: number | null
   matchedCount: number | null
