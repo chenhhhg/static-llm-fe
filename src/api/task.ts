@@ -88,3 +88,13 @@ export const cancelTask = (id: number) => {
 export const deleteTask = (id: number) => {
   return api.delete<ResultVoid>(`/task/${id}`)
 }
+
+/** Start LLM analysis phase (task must be in WAITING_LLM status) */
+export const startLlm = (id: number) => {
+  return api.post<ResultVoid>(`/task/startLlm/${id}`)
+}
+
+/** Stop LLM analysis phase (task must be in JUDGING status) */
+export const stopLlm = (id: number) => {
+  return api.post<ResultVoid>(`/task/stopLlm/${id}`)
+}

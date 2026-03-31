@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { getTaskDetail, cancelTask, type AnalysisTask } from '../api/task'
+import { getTaskDetail, cancelTask, startLlm, stopLlm, type AnalysisTask } from '../api/task'
 import { getIssuesByTaskId, type Issue, type IssueFilter } from '../api/issue'
 import StatusBadge from '../components/StatusBadge.vue'
 import MdViewer from '../components/MdViewer.vue'
@@ -104,6 +104,43 @@ const handleCancel = async () => {
     }
   } catch (error) {
     ElMessage.error('取消失败')
+  }
+}
+
+// LLM control
+const llmLoading = ref(false)
+
+const handleStartLlm = async () => {
+  llmLoading.value = true
+  try {
+    const res = await startLlm(parseInt(taskId))
+    if (res.data.code === 200) {
+      ElMessage.success('LLM 分析已启动')
+      fetchDetail()
+    } else {
+      ElMessage.error(res.data.message || '启动失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.msg || '启动 LLM 分析失败')
+  } finally {
+    llmLoading.value = false
+  }
+}
+
+const handleStopLlm = async () => {
+  llmLoading.value = true
+  try {
+    const res = await stopLlm(parseInt(taskId))
+    if (res.data.code === 200) {
+      ElMessage.success('LLM 分析已停止')
+      fetchDetail()
+    } else {
+      ElMessage.error(res.data.message || '停止失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.msg || '停止 LLM 分析失败')
+  } finally {
+    llmLoading.value = false
   }
 }
 
@@ -268,6 +305,22 @@ onMounted(() => {
           @click="goToEvalHistory"
         >
           评估历史
+        </el-button>
+        <el-button
+          v-if="task.status === 'WAITING_LLM'"
+          type="success"
+          :loading="llmLoading"
+          @click="handleStartLlm"
+        >
+          启动 LLM 分析
+        </el-button>
+        <el-button
+          v-if="task.status === 'JUDGING'"
+          type="warning"
+          :loading="llmLoading"
+          @click="handleStopLlm"
+        >
+          停止 LLM 分析
         </el-button>
         <el-button 
           v-if="['SUBMITTED', 'WAITING_ANALYSIS', 'ANALYZING', 'WAITING_LLM', 'JUDGING'].includes(task.status)"
